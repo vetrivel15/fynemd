@@ -1,9 +1,12 @@
 package main
 
 import (
+	"io"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -51,15 +54,77 @@ func (app *config) makeUI() (*widget.Entry, *widget.RichText) {
 }
 
 func (app *config) createMenuItems(win fyne.Window) {
-	openMenuItem := fyne.NewMenuItem("Open...", func() {})
+	openMenuItem := fyne.NewMenuItem("Open...", app.openFunc(win))
 
 	saveMenuItem := fyne.NewMenuItem("Save", func() {})
+	app.SaveMenuItem = saveMenuItem
+	app.SaveMenuItem.Disabled = true
 
-	saveAsMenuItem := fyne.NewMenuItem("Save As...", func() {})
+	saveAsMenuItem := fyne.NewMenuItem("Save As...", app.saveAsFunc(win))
 
 	fileMenu := fyne.NewMenu("File", openMenuItem, saveMenuItem, saveAsMenuItem)
 
 	menu := fyne.NewMainMenu(fileMenu)
 
 	win.SetMainMenu(menu)
+}
+
+func (app *config) openFunc(win fyne.Window) func() {
+	return func() {
+		openDiaglog := dialog.NewFileOpen(func(read fyne.URIReadCloser, err error) {
+			if err != nil {
+				dialog.ShowError(err, win)
+				return
+			}
+
+			if read == nil {
+				// User cancelled
+				return
+			}
+
+			defer read.Close()
+
+			data, err := io.ReadAll(read)
+			if err != nil {
+				dialog.ShowError(err, win)
+				return
+			}
+
+			app.EditWidget.SetText(string(data))
+
+			app.CurrentFile = read.URI()
+
+			win.SetTitle(win.Title() + " - " + read.URI().Name())
+		}, win)
+
+		openDiaglog.Show()
+		app.SaveMenuItem.Disabled = false
+	}
+}
+
+func (app *config) saveAsFunc(win fyne.Window) func() {
+	return func() {
+		saveDialog := dialog.NewFileSave(func(write fyne.URIWriteCloser, err error) {
+			if err != nil {
+				dialog.ShowError(err, win)
+				return
+			}
+
+			if write == nil {
+				// User cancelled
+				return
+			}
+
+			// save file
+			write.Write([]byte(app.EditWidget.Text))
+			app.CurrentFile = write.URI()
+
+			defer write.Close()
+
+			win.SetTitle(win.Title() + " - " + write.URI().Name())
+			app.SaveMenuItem.Disabled = false
+		}, win)
+
+		saveDialog.Show()
+	}
 }
